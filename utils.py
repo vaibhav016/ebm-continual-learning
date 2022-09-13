@@ -183,7 +183,7 @@ def weight_reset(m):
     if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear) or isinstance(m, em.LinearExcitability):
         m.reset_parameters()
 
-def load_checkpoint(model, model_dir, verbose=True, name=None, add_si_buffers=False,device="gpu"):
+def load_checkpoint(model, model_dir, verbose=True, name=None, add_si_buffers=False,device="cuda"):
     '''Load saved state (in form of dictionary) at [model_dir] (if name is None, use "model.name") to [model].'''
     # -path from where to load checkpoint
     name = model.name if name is None else name

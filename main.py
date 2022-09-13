@@ -14,7 +14,7 @@ from data_loader.data_loader_online import get_multitask_experiment
 from network.classifier import Classifier
 from network.ebm import EBM
 import callbacks as cb
-from train import train_cl, train_cl_noboundary
+from train import train_cl, train_cl_noboundary, train_cl_decoupled
 from param_values import set_default_values
 import pdb
 import random
@@ -152,7 +152,7 @@ def run(args):
     # MODEL
     #-------------------------------------------------------------------------------------------------
     if args.ebm:
-        model = EBM(args, image_size=config['size'], image_channels=config['channels'], classes=config['num_classes'], fc_units=args.fc_units).to(device)
+        model = EBM(args, image_size=config['size'], image_channels=config['channels'], classes=51, fc_units=args.fc_units).to(device)
     else:
         model = Classifier(args, image_size=config['size'], image_channels=config['channels'], classes=config['num_classes'], fc_units=args.fc_units).to(device)
 
@@ -254,10 +254,14 @@ def run(args):
     start = time.time()
 
     if args.task_boundary:
-        train_cl(
+        train_cl_decoupled(
             args, model, train_datasets, scenario=scenario, labels_per_task=config['labels_per_task'],
             iters=args.iters, batch_size=args.batch,
             eval_cbs=eval_cbs, loss_cbs=solver_loss_cbs)
+
+        # train_cl_decoupled(args, model, train_datasets, scenario=scenario, labels_per_task=config['labels_per_task'],
+        #     iters=args.iters, batch_size=args.batch,
+        #     eval_cbs=eval_cbs, loss_cbs=solver_loss_cbs)
     else:
         train_cl_noboundary(
             args, model, train_datasets, scenario=scenario, labels_per_task=config['labels_per_task'],
@@ -275,11 +279,11 @@ def run(args):
     if args.ebm:
         precs = [evaluate.validate_ebm(
             args, model, test_datasets[i], verbose=False, test_size=None, task=i+1, with_exemplars=False,
-            current_task = args.tasks) for i in range(args.tasks)]
+            current_task = args.tasks, device=device) for i in range(args.tasks)]
     else:
         precs = [evaluate.validate(
             args, model, test_datasets[i], verbose=False, test_size=None, task=i+1, with_exemplars=False,
-            current_task = args.tasks) for i in range(args.tasks)]
+            current_task = args.tasks, device=device) for i in range(args.tasks)]
 
     print("\n Precision on test-set (softmax classification):")
     for i in range(args.tasks):

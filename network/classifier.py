@@ -75,7 +75,7 @@ class Classifier(ContinualLearner):
     def name(self):
         return 'Classifier'
 
-    def train_a_batch(self, args, x, y, x_, y_, task=1, device="gpu"):
+    def train_a_batch(self, args, x, y, x_, y_, task=1, device="cuda"):
         self.train()
         self.optimizer.zero_grad()
         batch_size = x.shape[0]
@@ -144,25 +144,25 @@ class Classifier(ContinualLearner):
                         neg_sample = random.choice(cur_classes)
                         if not neg_sample == y[i]:
                             break
-                    joint_targets[i] = torch.tensor([y[i], neg_sample]).cuda()
+                    joint_targets[i] = torch.tensor([y[i], neg_sample]).to(device)
                 
                 y_hat = self(x)
                 y_hat = y_hat.gather(dim=1, index=joint_targets)
 
                 ## compute loss
-                predL = F.cross_entropy(input=y_hat, target=torch.zeros(batch_size).long().cuda(), reduction='mean')
+                predL = F.cross_entropy(input=y_hat, target=torch.zeros(batch_size).long().to(device), reduction='mean')
                 loss_cur = predL
 
                 ## compuate accuracy
                 _, precision = torch.max(y_hat, 1)
-                precision = 1.* (precision == torch.zeros(batch_size).long().cuda()).sum().item() / x.size(0)
+                precision = 1.* (precision == torch.zeros(batch_size).long().to(device)).sum().item() / x.size(0)
 
             else:
                 y_hat = self(x)
                 y_hat = y_hat[:, cur_classes]
 
                 ## compute loss
-                y_tem = torch.tensor([cur_classes.index(tem) for tem in y]).long().cuda()
+                y_tem = torch.tensor([cur_classes.index(tem) for tem in y]).long().to(device)
                 predL = F.cross_entropy(input=y_hat, target=y_tem, reduction='mean')
                 loss_cur = predL
 

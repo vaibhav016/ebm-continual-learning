@@ -47,6 +47,36 @@ class EBM_MLP(nn.Module):
         
         return x
 
+    def embedding_forward_MLP(self,x,y):
+
+        bs = x.shape[0]
+
+        y = self.y_ebm(y)
+
+        x = self.x_fc1(x)
+        x = x[:, None, :].expand_as(y)
+
+        y = F.normalize(y, p=2, dim=-1)
+        x = F.normalize(x, p=2, dim=-1)
+
+        z = x * y
+        x_ = x + z
+        x_ = F.relu(x_)
+
+        if not self.args.task_boundary:
+            x = self.x_fc2(x)
+            z = x * y
+            x = x + z
+            x = F.relu(x)
+
+        final_features = self.classifier(x_)
+        final_features = final_features.view(bs, -1)
+
+        # X is 128x3x400, and y is 128x3x400 instead of being a scalar.
+
+        return final_features, x_, y
+
+
 
 
 
@@ -121,7 +151,7 @@ class EBM_net_cifar100(nn.Module):
     def __init__(self, num_classes=10, input_size=1000, output_size=10, layers=2, hid_size=1000, hid_smooth=None,
                  size_per_layer=None,
                  drop=0, batch_norm=True, nl="relu", bias=True, excitability=False, excit_buffer=False, output='normal',
-                 fixed_mask=True, mask_prob=0.8, only_first=False, with_skip=False, device="gpu"):
+                 fixed_mask=True, mask_prob=0.8, only_first=False, with_skip=False, device="cuda"):
         '''sizes: 0th=[input], 1st=[hid_size], ..., 1st-to-last=[hid_smooth], last=[output].
         [num_classes]      # of classes
         [input_size]       # of inputs

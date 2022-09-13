@@ -90,7 +90,7 @@ class ContinualLearner(nn.Module, metaclass=abc.ABCMeta):
                     y_hat = y_hat[:, seen_classes_list]
 
                     ## compute loss
-                    y_tem = torch.tensor([seen_classes_list.index(tem) for tem in y]).long().cuda()
+                    y_tem = torch.tensor([seen_classes_list.index(tem) for tem in y]).long().to(device)
                     negloglikelihood = F.nll_loss(F.log_softmax(y_hat, dim=1), y_tem)
                 else:
                     negloglikelihood = F.nll_loss(F.log_softmax(y_hat, dim=1), y)

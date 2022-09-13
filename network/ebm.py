@@ -62,7 +62,7 @@ class EBM(ContinualLearner):
 
                 
     def forward(self, x, y, task_id=None):
-        if self.args.experiment=='splitMNIST' or self.args.experiment=='permMNIST' or self.args.experiment=='splitMNISToneclass':
+        if self.args.experiment=='splitMNIST' or self.args.experiment == 'permMNIST' or self.args.experiment=='splitMNISToneclass':
             if self.args.task_info_input:
                 final_features = self.fcE(self.flatten(x), y, task_id)
             else:
@@ -174,10 +174,28 @@ class EBM(ContinualLearner):
 
         return loss_cur, precision
 
+    def forward_embeddings(self, x,y,task_id=None):
+        if self.args.experiment == 'splitMNIST' or self.args.experiment == 'permMNIST' or self.args.experiment == 'splitMNISToneclass':
+            if self.args.task_info_input:
+                final_features = self.fcE(self.flatten(x), y, task_id)
+            else:
+                final_features, x, y_embeddings = self.fcE.embedding_forward_MLP(self.flatten(x), y)
 
-        
+        elif self.args.experiment == 'cifar10':
+            final_features = self.fcE(x, y)
 
-    def train_a_batch(self, args, x, y, x_, y_, task=1, device="gpu"):
+        elif self.args.experiment == 'cifar100':
+            # final_features = self.fcE(x, y)
+
+            batch_size = x.shape[0]
+            hidden_rep = self.flatten(self.convE(x))
+            features = self.fcE(hidden_rep, y)
+            final_features = self.classifier(features)
+            final_features = final_features.view(batch_size, -1)
+
+        return final_features, x, y_embeddings
+
+    def train_a_batch(self, args, x, y, x_, y_, task=1, device="cuda"):
         self.train()
         self.optimizer.zero_grad()
 
@@ -193,6 +211,7 @@ class EBM(ContinualLearner):
                     cur_classes=list(y.unique())
 
                 for tem in y: assert tem in cur_classes ## y shoud be in current classes
+                # print("--------classes present in cur_classes---------")
             else:
                 
                 if args.task_boundary:
@@ -218,6 +237,7 @@ class EBM(ContinualLearner):
                             if not neg_sample == y[i]:
                                 break
                         joint_targets[i] = torch.tensor([y[i], neg_sample]).to(device)
+                    # print("----creation of joint targets finished----")
                 else:
                     joint_targets = torch.tensor(np.array(cur_classes)).view(1, -1).expand(batch_size, len(cur_classes))
                     joint_targets = joint_targets.to(device).long()
@@ -241,11 +261,10 @@ class EBM(ContinualLearner):
                 y_tem = torch.tensor([cur_classes.index(tem) for tem in y]).long().to(device)
                 y_tem = y_tem.view(batch_size, 1)
                 energy_pos = energy.gather(dim=1, index=y_tem)
-                    
 
             partition_estimate = -1 * energy
             partition_estimate = torch.logsumexp(partition_estimate, dim=1, keepdim=True)
-            
+
             predL = energy_pos + partition_estimate
             predL = predL.mean()
 
@@ -283,10 +302,159 @@ class EBM(ContinualLearner):
         return {
             'loss_total': loss_total.item(),
             'loss_current': loss_cur.item() if x is not None else 0,
-            'ewc': ewc_loss.item(), 
+            'ewc': ewc_loss.item(),
             'si_loss': surrogate_loss.item(),
             'precision': precision if precision is not None else 0.,
         }
 
+    def train_a_batch_decoupled_contrastive(self, args, x, y, x_, y_, task=1, device="cuda",
+                                            energy_positive=True, energy_negative=False, previous_loss = None,
+                                            embeddings_energy = False,
+                                            ):
+        assert energy_positive != energy_negative, "Both positive and negative energies cannot be same."
+        self.train()
+        self.optimizer.zero_grad()
+
+        # print(y.min(), y.max(), task)
+
+        if args.experiment == 'cifar100':
+            loss_cur, precision = self.forward_cifar100(args, x, y, x_, y_, task)
+        else:
+            if x_ is None:
+                if args.task_boundary:
+                    cur_classes = self.labels_per_task[task - 1]
+                    total_classes = list(np.unique([i for i in self.labels_per_task]))
+                else:
+                    cur_classes = list(y.unique())
+
+                for tem in y: assert tem in cur_classes  ## y shoud be in current classes
+                # print("--------classes present in cur_classes---------")
+            else:
+                if args.task_boundary:
+                    cur_classes = np.stack(self.labels_per_task[:task])
+                    cur_classes = cur_classes.reshape(-1)
+                    x = torch.cat([x, x_], dim=0)
+                    y = torch.cat([y, y_], dim=0)
+
+            batch_size, c, w, h = x.shape
+
+            single_neg = True
+            if self.args.experiment == 'splitMNISToneclass':
+                joint_targets = torch.cat([y[:, None], (torch.ones([batch_size, 1]) * 99).to(device)], dim=-1)
+                joint_targets = joint_targets.to(device).long()
+            else:
+                if single_neg:
+                    joint_targets = torch.LongTensor(batch_size, 3).to(device)
+                    for i in range(batch_size):
+                        while True:
+                            neg_sample = random.choice(cur_classes)
+                            fake_negative_label = random.randint(11, 20) # Arbitrary between 11-50
+                            if not neg_sample == y[i] and not fake_negative_label==y[i]:
+                                break
+                        joint_targets[i] = torch.tensor([y[i], neg_sample, fake_negative_label]).to(device)
+                    # print("----creation of joint targets finished----")
+                else:
+                    joint_targets = torch.tensor(np.array(cur_classes)).view(1, -1).expand(batch_size, len(cur_classes))
+                    joint_targets = joint_targets.to(device).long()
+
+            if self.args.task_info_input:
+                task_id = (torch.ones([batch_size]) * (task - 1)).long().to(device)
+                energy = self(x, joint_targets, task_id)  # [128, 4]
+            else:
+                if embeddings_energy:
+                    energy, x_embeddings, y_embeddings = self.forward_embeddings(x,joint_targets)
+                else:
+                    energy = self(x, joint_targets)  # [128, 4]
+
+            ## compute loss
+            if single_neg:
+                if embeddings_energy:
+                    energy_pos = x_embeddings[:, 0].view(batch_size, -1)
+                    energy_neg = y_embeddings[:, 0].view(batch_size, -1)
+                    if energy_positive:
+                        energy_fake = y_embeddings[:, 0].view(batch_size, -1)
+                    elif energy_negative:
+                        energy_fake = y_embeddings[:, 1].view(batch_size, -1)
+                else:
+                    energy_pos = energy[:, 0].view(batch_size, -1)
+                    energy_neg = energy[:, 1].view(batch_size, -1)
+                    energy_fake = energy[:, 2].view(batch_size, -1)
+            else:
+                y_tem = torch.tensor([cur_classes.index(tem) for tem in y]).long().to(device)
+                y_tem = y_tem.view(batch_size, 1)
+                energy_pos = energy.gather(dim=1, index=y_tem)
+                # TODO define energy_neg loss here.
+
+            eq_5_default = False
+            if eq_5_default:
+                # This is eq 5
+                partition_estimate = -1 * energy
+                partition_estimate = torch.logsumexp(partition_estimate, dim=1, keepdim=True)
+                predL = energy_pos + partition_estimate
+                predL = predL.mean()
+            else:
+                reg = 0.8
+                # This is eq 7
+                if embeddings_energy:
+                    if energy_positive:
+                        predL = torch.pow((energy_pos.mean() - energy_neg.mean()), 2)
+                    else:
+                        predL = torch.pow((energy_pos.mean() - energy_neg.mean()), 2) - torch.pow((energy_pos.mean() - energy_fake.mean()), 2)
+                else:
+                    if energy_positive:
+                        # print("+ve")
+                        predL = energy_pos.mean() - energy_fake.mean() + reg*((torch.pow(energy_pos, 2).mean()) + (torch.pow(energy_fake, 2)).mean())
+                    elif energy_negative:
+                        # print("-ve")
+                        predL = energy_pos.mean() - energy_neg.mean() + ((torch.pow(energy_pos, 2).mean()) + (torch.pow(energy_neg, 2)).mean())
+
+
+                # predL = energy_pos.mean() - energy_neg.mean()
+                # predL = predL + (torch.pow(energy_pos, 2).mean()) + (torch.pow(energy_neg, 2)).mean()
+
+
+            # if energy_positive:
+            #     previous_loss += energy_pos.mean() + torch.pow(energy_pos, 2).mean()
+            # elif energy_negative:
+            #     previous_loss -= energy_neg.mean() + torch.pow(energy_neg, 2).mean()
+
+            L2_loss = energy_pos.pow(2).mean()
+            loss_cur = predL
+
+            ## compuate accuracy
+            if single_neg:
+                if embeddings_energy:
+                    _, precision = torch.min(x_embeddings.mean(dim=2), 1)
+                else:
+                    _, precision = torch.min(energy, 1)
+                precision = 1. * (precision == torch.zeros(batch_size).long().to(device)).sum() / x.size(0)
+            else:
+                _, precision = torch.min(energy, 1)
+                precision = 1. * (precision == y_tem.view(-1)).sum() / x.size(0)
+
+        ## other losses
+        loss_total = loss_cur
+
+        # Add SI-loss (Zenke et al., 2017)
+        surrogate_loss = self.surrogate_loss()
+        if self.si_c > 0:
+            loss_total += self.si_c * surrogate_loss
+
+        # Add EWC-loss
+        ewc_loss = self.ewc_loss()
+        if self.ewc_lambda > 0:
+            loss_total += self.ewc_lambda * ewc_loss
+
+        loss_total.backward()
+        self.optimizer.step()
+
+        # Return the dictionary with different training-loss split in categories
+        return {
+            'loss_total': loss_total.item(),
+            'loss_current': loss_cur.item() if x is not None else 0,
+            'ewc': ewc_loss.item(),
+            'si_loss': surrogate_loss.item(),
+            'precision': precision if precision is not None else 0.,
+        }
 
 
