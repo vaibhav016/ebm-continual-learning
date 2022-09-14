@@ -234,14 +234,15 @@ def run(args):
     #---------------------#
     #----- CALLBACKS -----#
     #---------------------#
-    solver_loss_cbs = [cb._solver_loss_cb(log=args.loss_log, model=model, tasks=args.tasks, iters_per_task=args.iters)]
+    embeddings_energy = True
+    solver_loss_cbs = [cb._solver_loss_cb(log=args.loss_log, model=model, tasks=args.tasks, iters_per_task=args.iters, embeddings_energy=embeddings_energy)]
     
     eval_cb = cb._eval_cb(
         log=args.prec_log, test_datasets=test_datasets, visdom=args.visdom, precision_dict=None, iters_per_task=args.iters,
-        test_size=args.prec_n, labels_per_task=config['labels_per_task'], scenario=scenario)
+        test_size=args.prec_n, labels_per_task=config['labels_per_task'], scenario=scenario, embeddings_energy=embeddings_energy)
     eval_cb_full = cb._eval_cb(
         log=args.iters, test_datasets=test_datasets, precision_dict=precision_dict,
-        iters_per_task=args.iters, labels_per_task=config['labels_per_task'], scenario=scenario)
+        iters_per_task=args.iters, labels_per_task=config['labels_per_task'], scenario=scenario, embeddings_energy=embeddings_energy)
     eval_cbs = [eval_cb, eval_cb_full]
     
 
@@ -254,7 +255,7 @@ def run(args):
     start = time.time()
 
     if args.task_boundary:
-        train_cl_decoupled(
+        train_cl(
             args, model, train_datasets, scenario=scenario, labels_per_task=config['labels_per_task'],
             iters=args.iters, batch_size=args.batch,
             eval_cbs=eval_cbs, loss_cbs=solver_loss_cbs)
@@ -279,7 +280,7 @@ def run(args):
     if args.ebm:
         precs = [evaluate.validate_ebm(
             args, model, test_datasets[i], verbose=False, test_size=None, task=i+1, with_exemplars=False,
-            current_task = args.tasks, device=device) for i in range(args.tasks)]
+            current_task = args.tasks, device=device, embeddings_energy=embeddings_energy) for i in range(args.tasks)]
     else:
         precs = [evaluate.validate(
             args, model, test_datasets[i], verbose=False, test_size=None, task=i+1, with_exemplars=False,

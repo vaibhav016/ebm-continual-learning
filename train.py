@@ -29,7 +29,7 @@ def train_cl(args, model, train_datasets, scenario="class",labels_per_task=None,
                 n = n.replace('.', '__')
                 model.register_buffer('{}_SI_prev_task'.format(n), p.data.clone())
 
-    REAL_IMG_REPLAY = True
+    REAL_IMG_REPLAY = None
     pre_data_img_list = []
     pre_data_lab_list = []
     
@@ -136,9 +136,16 @@ def train_cl(args, model, train_datasets, scenario="class",labels_per_task=None,
                 x_ = x_.to(device)
                 y_ = y_.to(device)
 
-
+            decoupled_contrastive_loss = True
+            embeddings_energy = True
             if batch_index <= iters:
-                loss_dict = model.train_a_batch(args, x, y, x_, y_, task=task, device=device)
+                if decoupled_contrastive_loss:
+                    loss_dict = model.train_a_batch_embeddings_l2(args, x, y, x_, y_, task=task, device=device,
+                                                                  embeddings_energy=embeddings_energy)
+
+                else:
+                    loss_dict = model.train_a_batch(args, x, y, x_, y_, task=task, device=device)
+
 
 
                 # Update running parameter importance estimates in W
@@ -152,12 +159,15 @@ def train_cl(args, model, train_datasets, scenario="class",labels_per_task=None,
 
                 for loss_cb in loss_cbs:
                     if loss_cb is not None:
-                        loss_cb(progress, batch_index, loss_dict, task=task)
+                        loss_cb(progress, batch_index, loss_dict, task=task,embeddings_energy=embeddings_energy)
                 for eval_cb in eval_cbs:
                     if eval_cb is not None:
-                        eval_cb(args, model, batch_index, task=task, device=device)
+                        eval_cb(args, model, batch_index, task=task, device=device, embeddings_energy= embeddings_energy)
+
+
 
         progress.close()
+
         
         
         ## EWC and SI is only for softmax-based classifier
@@ -173,6 +183,7 @@ def train_cl(args, model, train_datasets, scenario="class",labels_per_task=None,
 
         if args.replay_mode == 'real_img_replay':
             REAL_IMG_REPLAY = True
+
 
 
 
@@ -387,8 +398,7 @@ def train_cl_decoupled(args, model, train_datasets, scenario="class",labels_per_
                 else:
                     # print("decoupled training")
                     loss_dict = model.train_a_batch_decoupled_contrastive(args, x, y, x_, y_, task=task, device=device,
-                                                                          energy_negative=False, energy_positive=True,
-                                                                          previous_loss=0, embeddings_energy=False)
+                                                                           embeddings_energy=False)
 
 
                 # Update running parameter importance estimates in W

@@ -19,7 +19,9 @@ class EBM_MLP(nn.Module):
         self.y_ebm = nn.Embedding(self.num_classes, hid_size)
         
         self.x_fc1 = nn.Linear(input_size, hid_size)
-        self.x_fc2 = nn.Linear(hid_size, hid_size)    
+        self.x_fc2 = nn.Linear(hid_size, hid_size)
+        self.y_fc1 = nn.Linear(hid_size, hid_size)
+
         self.classifier = nn.Linear(hid_size, 1)
         
 
@@ -52,16 +54,18 @@ class EBM_MLP(nn.Module):
         bs = x.shape[0]
 
         y = self.y_ebm(y)
+        y_embedd = self.y_fc1(y)
 
         x = self.x_fc1(x)
         x = x[:, None, :].expand_as(y)
 
         y = F.normalize(y, p=2, dim=-1)
-        x = F.normalize(x, p=2, dim=-1)
-
+        y_embedd = F.normalize(y_embedd, p=2, dim=-1)
         z = x * y
         x_ = x + z
         x_ = F.relu(x_)
+
+        x = F.normalize(x, p=2, dim=-1)
 
         if not self.args.task_boundary:
             x = self.x_fc2(x)
@@ -74,7 +78,7 @@ class EBM_MLP(nn.Module):
 
         # X is 128x3x400, and y is 128x3x400 instead of being a scalar.
 
-        return final_features, x_, y
+        return final_features, x, y_embedd
 
 
 

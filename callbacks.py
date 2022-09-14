@@ -3,13 +3,13 @@ import pdb
 
 
 def _eval_cb(log, test_datasets, visdom=None, precision_dict=None, iters_per_task=None,
-             test_size=None, labels_per_task=None, scenario="class", summary_graph=True, with_exemplars=False):
+             test_size=None, labels_per_task=None, scenario="class", summary_graph=True, with_exemplars=False, embeddings_energy=False):
     '''Initiates function for evaluating performance of classifier (in terms of precision).
 
     [test_datasets]     <list> of <Datasets>; also if only 1 task, it should be presented as a list!
     [scenario]          <str> how to decide which classes to include during evaluating precision'''
 
-    def eval_cb(args, classifier, batch, task=1, device="cuda"):
+    def eval_cb(args, classifier, batch, task=1, device="cuda", embeddings_energy=False):
         '''Callback-function, to evaluate performance of classifier.'''
 
         iteration = batch if task==1 else (task-1)*iters_per_task + batch
@@ -19,16 +19,16 @@ def _eval_cb(log, test_datasets, visdom=None, precision_dict=None, iters_per_tas
             evaluate.precision(args, classifier, test_datasets, task, iteration,
                                labels_per_task=labels_per_task, scenario=scenario, precision_dict=precision_dict,
                                test_size=test_size, visdom=visdom, summary_graph=summary_graph,
-                               with_exemplars=with_exemplars,device=device)
+                               with_exemplars=with_exemplars,device=device, embeddings_energy=embeddings_energy)
 
     return eval_cb if ((visdom is not None) or (precision_dict is not None)) else None
 
 
 
-def _solver_loss_cb(log, model=None, tasks=None, iters_per_task=None, progress_bar=True):
+def _solver_loss_cb(log, model=None, tasks=None, iters_per_task=None, progress_bar=True, embeddings_energy=False):
     '''Initiates function for keeping track of, and reporting on, the progress of the solver's training.'''
 
-    def cb(bar, iter, loss_dict, task=1):
+    def cb(bar, iter, loss_dict, task=1, embeddings_energy=False):
         '''Callback-function, to call on every iteration to keep track of training progress.'''
 
         iteration = iter if task==1 else (task-1)*iters_per_task + iter

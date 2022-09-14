@@ -89,7 +89,7 @@ def validate(args, model, dataset, batch_size=128, test_size=1024, verbose=True,
 
 
 def validate_ebm(args, model, dataset, batch_size=128, test_size=1024, verbose=True,
-             with_exemplars=False, no_task_mask=False, task=None, current_task=None, device="cuda"):
+             with_exemplars=False, no_task_mask=False, task=None, current_task=None, device="cuda", embeddings_energy=False):
 
     # Set model to eval()-mode
     mode = model.training
@@ -140,11 +140,17 @@ def validate_ebm(args, model, dataset, batch_size=128, test_size=1024, verbose=T
                     task_id = (torch.ones([batch_size])*(task-1)).long().to(device)
                     energy = model(data, joint_targets, task_id)
                 else:
-                    energy = model(data, joint_targets)
+                    if embeddings_energy:
+                        energy, x_embeddings, y_embeddings = model.forward_embeddings(data,joint_targets)
+                    else:
+                        energy = model(data, joint_targets)
 
             
                 # accuracy
-                _, predicted = torch.min(energy, 1)
+                if embeddings_energy:
+                    _, predicted = torch.min(x_embeddings.mean(dim=2), 1)
+                else:
+                    _, predicted = torch.min(energy, 1)
                 label_tem = torch.tensor([seen_classes_list.index(tem) for tem in labels]).long().to(device)
 
                 predicted = (predicted == label_tem).sum().item()
@@ -164,6 +170,7 @@ def validate_ebm(args, model, dataset, batch_size=128, test_size=1024, verbose=T
     model.train(mode=mode)
     verbose = True
     if verbose:
+        print("energy embedding", embeddings_energy)
         print('=> {}: Task {} precision: {:.3f}'.format(args.save_dir, task, precision))
     
     return precision
@@ -172,7 +179,7 @@ def validate_ebm(args, model, dataset, batch_size=128, test_size=1024, verbose=T
 
 def precision(args, model, datasets, current_task, iteration, labels_per_task=None, scenario="class",
               precision_dict=None, test_size=None, visdom=None, verbose=False, summary_graph=True,
-              with_exemplars=False, no_task_mask=False, device="cuda"):
+              with_exemplars=False, no_task_mask=False, device="cuda", embeddings_energy=False):
     '''Evaluate precision of a classifier (=[model]) on all tasks so far (= up to [current_task]) using [datasets].
 
     [precision_dict]    None or <dict> of all measures to keep track of, to which results will be appended to
@@ -188,7 +195,7 @@ def precision(args, model, datasets, current_task, iteration, labels_per_task=No
             if args.ebm:
                 precs.append(validate_ebm(args, model, datasets[i], test_size=test_size, verbose=verbose,
                                       with_exemplars=with_exemplars,
-                                      no_task_mask=no_task_mask, task=i+1, current_task=current_task, device=device))
+                                      no_task_mask=no_task_mask, task=i+1, current_task=current_task, device=device, embeddings_energy=embeddings_energy))
             else:
                 precs.append(validate(args, model, datasets[i], test_size=test_size, verbose=verbose,
                                       with_exemplars=with_exemplars,
